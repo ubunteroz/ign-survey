@@ -1,0 +1,94 @@
+#!/bin/bash
+
+SERVER="http://127.0.0.1:8080"
+UA="IGN Survey Client"
+
+function client_id {
+    CLIENT_ID=$(dd if=/dev/urandom bs=1K count=1 2>/dev/null | sha1sum - | sed "s/ \(.*\)-//")
+}
+
+function collect {
+    # OS
+    if [[ -f "/etc/os-release" ]]; then
+        OS_RELEASE=$(grep -m1 VERSION= /etc/os-release | sed "s/VERSION=//")
+    fi
+    if [[ $OS_RELEASE == "" ]]; then
+        OS_RELEASE="Unknown"
+    fi
+
+    # Kernel
+    KERNEL_ARCH=$(uname -m)
+    KERNEL_RELEASE=$(uname -r)
+
+    # CPU
+    CPU_VENDOR=$(grep -m1 "vendor_id" /proc/cpuinfo | sed "s/\(.*\): //")
+    CPU_MODEL=$(grep -m1 "model name" /proc/cpuinfo | sed "s/\(.*\): //")
+    CPU_CORES=$(grep -c "core id" /proc/cpuinfo)
+    CPU_THREADS=$(grep -c "processor" /proc/cpuinfo)
+    CPU_VIRT_SUPPORT=$(grep -m 1 -c "vmx\|svm" /proc/cpuinfo)
+
+    # RAM
+    RAM_TOTAL=$(grep MemTotal /proc/meminfo | sed -e "s/\(.*\)  //" -e "s/ kB//")
+
+    # GPU
+    _GPU_ID=$(lspci | grep -m 1 VGA | sed "s/ \(.*\)//")
+    GPU_CONTROLLER=$(lspci -v -s $_GPU_ID | head -n1 | sed -e "s/\(.*\)compatible controller: //" -e "s/ (rev\(.*\)//")
+    GPU_DRIVER=$(lspci -v -s $_GPU_ID | grep "Kernel driver" | sed -e "s/\(.*\): //")
+    if [[ -f $(which glxinfo) ]]; then
+        GPU_OPENGL=$(glxinfo | grep "OpenGL version" | sed -e "s/\(.*\): //" -e "s/ \(.*\)//")
+    else
+        GPU_OPENGL="0.0.0"
+    fi
+}
+
+function show {
+    if [ $CPU_VIRT_SUPPORT -gt 0 ]; then CPU_VIRT_SUPPORT_TEXT="Yes"; fi
+    echo "============================================================="
+    echo "           Survei Profil Perangkat IGOS Nusantara"
+    echo "============================================================="
+    echo "
+    - PROFILE -
+    Identifier   : $CLIENT_ID
+    OS Release   : $OS_RELEASE
+
+    - KERNEL -
+    Architecture : $KERNEL_ARCH
+    Release      : $KERNEL_RELEASE
+
+    - CPU -
+    Vendor       : $CPU_VENDOR
+    Model        : $CPU_MODEL
+    Cores        : $CPU_CORES
+    Threads      : $CPU_THREADS
+    Virt. Support: $CPU_VIRT_SUPPORT_TEXT
+
+    - RAM -
+    Total        : $RAM_TOTAL kB
+
+    - GPU -
+    Controller   : $GPU_CONTROLLER
+    Driver       : $GPU_DRIVER
+    OpenGL       : $GPU_OPENGL
+    "
+}
+
+function submit {
+    curl --silent -A "$UA" "$SERVER/installation/$CLIENT_ID" \
+        --form os_release="$OS_RELEASE" \
+        --form kernel_arch="$KERNEL_ARCH" \
+        --form kernel_release="$KERNEL_RELEASE" \
+        --form cpu_vendor="$CPU_VENDOR" \
+        --form cpu_model="$CPU_MODEL" \
+        --form cpu_cores="$CPU_CORES" \
+        --form cpu_threads="$CPU_THREADS" \
+        --form virt_support="$CPU_VIRT_SUPPORT" \
+        --form ram_total="$RAM_TOTAL" \
+        --form gpu_controller="$GPU_CONTROLLER" \
+        --form gpu_driver="$GPU_DRIVER" \
+        --form gpu_opengl="$GPU_OPENGL"
+}
+
+client_id
+collect
+show
+submit
